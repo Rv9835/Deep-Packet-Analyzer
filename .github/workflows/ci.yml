@@ -8,41 +8,54 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        build_type: [Release, Debug]
+    timeout-minutes: 30
 
     steps:
     - name: Checkout
       uses: actions/checkout@v4
 
-    - name: Install system dependencies
+    - name: Set up toolchain
       run: |
-        sudo apt-get update
-        sudo apt-get install -y build-essential cmake libssl-dev
+        if [ "${{ matrix.os }}" = "ubuntu-latest" ]; then
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake libssl-dev
+        else
+          brew update || true
+          brew install cmake openssl@3 || true
+        fi
 
     - name: Configure
       run: |
         mkdir -p build
         cd build
-        cmake .. -DCMAKE_BUILD_TYPE=Release
+        cmake .. -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
 
     - name: Build
       run: |
         cd build
-        make -j$(nproc)
+        if [ "${{ matrix.os }}" = "ubuntu-latest" ]; then
+          make -j$(nproc)
+        else
+          make -j$(sysctl -n hw.ncpu || echo 2)
+        fi
 
     - name: Run tests
       run: |
         cd build
-        # run ctest if available; fall back to executing known test binaries
         if command -v ctest >/dev/null 2>&1; then
           ctest --output-on-failure || true
         else
-          echo "ctest not available"
+          echo "ctest not available; skipping"
         fi
 
     - name: Upload test logs on failure
       if: failure()
       uses: actions/upload-artifact@v4
       with:
-        name: test-logs
+        name: test-logs-${{ matrix.os }}-${{ matrix.build_type }}
         path: build/Testing || build
