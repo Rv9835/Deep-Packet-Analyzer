@@ -19,22 +19,26 @@ make
 ```
 
 
-## Python utilities
+## Monorepo and JavaScript components
 
-### Web/worker prototype
-
-The `web` and `worker` directories contain a lightweight Express/Node
-prototype for job orchestration. To run it you'll need:
+This repository is managed as a pnpm workspace.  After installing Node
+and pnpm (see below), bootstrap the workspace from the project root:
 
 ```bash
-cd web && npm install express axios ioredis aws-sdk
-# optionally install redis and set REDIS_URL, API_KEY, etc.
-node index.js
+pnpm -w install         # install dependencies for all packages
+pnpm -w -r test          # run tests in every JS package that defines a script
 ```
 
-The worker uses the DPI engine binary (`dpi_engine`) on the PATH and
-expects Redis for the job queue and signed URLs for S3 interaction.
+Packages include `web` and `worker` (see `package.json`/`packages`).
+To operate on a single package use `--filter`, e.g.:
 
+```bash
+pnpm --filter web start
+```
+
+JavaScript development is optional; the core engine remains C++.
+
+## Python utilities
 
 The `generate_test_pcap.py` script uses [Scapy](https://scapy.net/). Install it with:
 
