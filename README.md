@@ -51,6 +51,32 @@ pip install scapy
 
 After building, run `./packet_analyzer` from the build directory.
 
+## Local infrastructure (Docker Compose)
+
+A simple compose file is provided to stand up supporting services for
+integration testing or development.
+
+```yaml
+# docker-compose.yml (at repo root)
+# postgres, redis and an S3-compatible MinIO server
+version: '3.8'
+
+services:
+  postgres: ...
+```
+
+Start the stack with:
+
+```bash
+docker-compose up -d
+```
+
+Postgres listens on port 5432, Redis on 6379, MinIO S3 API on 9000 and
+console on 9001 (optional).
+
+Expose the compose file locally with `docker-compose ps` to inspect.
+
+
 ### Dependencies
 
 The C++ engine requires:
