@@ -13,7 +13,15 @@
   "scripts": {
     "bootstrap": "pnpm -w install",
     "ci": "pnpm -w install && pnpm -w -r test",
+    "lint": "pnpm -w -r exec eslint . || true",
+    "test": "pnpm -w -r test",
     "build": "echo \"This monorepo contains C++ and JS packages; build per-package.\"",
-    "format": "echo \"No JS formatting configured by default.\""
+    "dev": "pnpm -w --parallel --filter web start & pnpm -w --parallel --filter worker start",
+    "format": "prettier --write \"**/*.{js,ts,json,md}\""
+  },
+  "devDependencies": {
+    "eslint": "^8.0.0",
+    "prettier": "^3.0.0",
+    "concurrently": "^8.0.0"
   }
 }

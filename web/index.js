@@ -1,7 +1,6 @@
 const express = require('express');
 const crypto = require('crypto');
 const path = require('path');
-const fs = require('fs');
 
 const app = express();
 app.use(express.json());
@@ -58,9 +57,9 @@ app.post('/jobs/:id/start', (req, res) => {
 });
 
 app.get('/signed-url', (req, res) => {
-    const { key, verb } = req.query;
+    const { key } = req.query;
     if (!key) return res.status(400).json({ error: 'key required' });
-    // verb=put/get indicates upload/download
+    // verb=put/get indicates upload/download (ignored)
     res.json({ url: makeSignedUrl(key) });
 });
 
