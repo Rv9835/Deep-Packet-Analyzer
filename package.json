@@ -1,0 +1,19 @@
+{
+  "name": "deep-packet-analyzer",
+  "private": true,
+  "version": "0.0.0",
+  "packageManager": "pnpm@8.6.0",
+  "workspaces": [
+    "apps/*",
+    "packages/*",
+    "engine/*",
+    "web",
+    "worker"
+  ],
+  "scripts": {
+    "bootstrap": "pnpm -w install",
+    "ci": "pnpm -w install && pnpm -w -r test",
+    "build": "echo \"This monorepo contains C++ and JS packages; build per-package.\"",
+    "format": "echo \"No JS formatting configured by default.\""
+  }
+}
