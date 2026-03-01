@@ -1,0 +1,11 @@
+{
+  "default_action": "deny",
+  "rules": [
+    {
+      "type": "ip",
+      "action": "allow",
+      "direction": "src",
+      "cidr": "192.168.0.0/16"
+    }
+  ]
+}

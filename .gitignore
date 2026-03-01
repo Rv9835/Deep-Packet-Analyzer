@@ -1,0 +1,26 @@
+# build artifacts
+/build/
+/out/
+/tests/out*/
+*.o
+*.obj
+
+# editor files
+.vscode/
+*.swp
+.DS_Store
+
+# node
+node_modules/
+
+# python
+__pycache__/
+*.pyc
+
+# large or generated pcaps
+output.pcap
+tests/tmp*.pcap
+tests/tmp*.pcapng
+
+# APIs and secrets
+.env

@@ -1,0 +1,2 @@
+# SHA256 of filtered.pcap created from http.pcap + rules
+# replace with real value after generating fixture

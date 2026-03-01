@@ -1,0 +1,6 @@
+{
+  "flows": [],
+  "skipped": {"fragments": 0, "parse_errors": 0},
+  "domains": [],
+  "app_types": [{"app": "http", "count": 1}]
+}
