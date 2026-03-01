@@ -2,8 +2,27 @@
 /build/
 /out/
 /tests/out*/
+# engine build directory (CMake)
+build/
+
+# Node.js
+/node_modules/
+/package-lock.json
+/yarn.lock
+/pnpm-lock.yaml
+
 *.o
 *.obj
+
+# environment
+.env
+.env.local
+.env.*.local
+
+# editor files
+.vscode/
+*.swp
+.DS_Store
 
 # editor files
 .vscode/
