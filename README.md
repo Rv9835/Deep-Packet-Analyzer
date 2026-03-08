@@ -2,7 +2,7 @@
 
 This is a simple packet analysis project written in C++. It includes modules for:
 
-- DPI engine (multi‑threaded)
+- DPI engine(multi‑threaded)
 - Packet parsing (Ethernet/IPv4/IPv6/TCP/UDP, VLAN, fragmentation, pcapng)
 - Connection tracking with deterministic canonical flow keys
 - Rule engine (IP, domain, app‑type)
