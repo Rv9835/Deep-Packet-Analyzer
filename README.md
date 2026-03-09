@@ -7,7 +7,7 @@ This is a simple packet analysis project written in C++. It includes modules for
 - Connection tracking with deterministic canonical flow keys
 - Rule engine (IP, domain, app‑type)
 - Metadata extraction (SNI, HTTP host)
-- Minimal web/worker job orchestration prototype
+- Minimal web/worker job orchestration and prototype
 
 
 ## Building
