@@ -10,13 +10,45 @@ This is a simple packet analysis project written in C++. It includes modules for
 - Minimal web/worker job orchestration and prototype
 
 
-## Building
+## Building the C++ Engine
+
+The C++ engine uses **CMake** with standardized output directories to `engine/build/`.
+
+### Quick Start
 
 ```bash
-mkdir build && cd build
-cmake ..
-make
+cd /path/to/Deep\ Packet\ Analyzer
+mkdir -p engine/build
+cd engine/build
+cmake -DCMAKE_BUILD_TYPE=Debug ..
+make -j$(nproc)  # or: cmake --build .
 ```
+
+The binary is built to: `engine/build/bin/packet_analyzer`
+
+### Running Tests
+
+Tests use **Catch2** framework and are integrated with **ctest**:
+
+```bash
+cd engine/build
+ctest --output-on-failure      # Run all tests
+ctest -R parser --output-on-failure  # Run specific test
+./bin/test_parser              # Run test directly
+```
+
+### Address and Undefined Behavior Sanitizers
+
+**Debug builds automatically enable sanitizers** (AddressSanitizer + UndefinedBehaviorSanitizer) on non-Windows platforms to detect memory errors and undefined behavior:
+
+```bash
+cmake -DCMAKE_BUILD_TYPE=Debug ..
+make -j$(nproc)
+./bin/test_parser  # Sanitizers will catch memory issues
+```
+
+For complete build and testing documentation, see [docs/building.md](docs/building.md).
+
 
 
 ## Monorepo and JavaScript components
