@@ -1,0 +1,258 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// User and Authentication
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String?
+  password  String?  // hashed password for local auth
+  image     String?
+  role      UserRole @default(USER)
+  
+  // Relations
+  accounts  Account[]
+  sessions  Session[]
+  projects  Project[]
+  apiKeys   ApiKey[]
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  @@index([email])
+}
+
+enum UserRole {
+  USER
+  ADMIN
+}
+
+model Account {
+  id                 String  @id @default(cuid())
+  userId             String
+  type               String
+  provider           String
+  providerAccountId  String
+  refresh_token      String?  @db.Text
+  access_token       String?  @db.Text
+  expires_at         Int?
+  token_type         String?
+  scope              String?
+  id_token           String?  @db.Text
+  session_state      String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@index([userId])
+}
+
+// Projects and Rules
+model Project {
+  id          String   @id @default(cuid())
+  userId      String
+  name        String
+  description String?
+  isActive    Boolean  @default(true)
+  
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  rulesets    Ruleset[]
+  jobs        Job[]
+  subscriptions Subscription[]
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@index([userId])
+  @@index([isActive])
+}
+
+model Ruleset {
+  id          String   @id @default(cuid())
+  projectId   String
+  name        String
+  description String?
+  rules       String   @db.Text  // JSON array of rules
+  isActive    Boolean  @default(true)
+  version     Int      @default(1)
+  
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  jobs        Job[]
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@index([projectId])
+  @@index([isActive])
+}
+
+// Jobs and Analysis
+model Job {
+  id          String   @id @default(cuid())
+  projectId   String
+  rulesetId   String
+  
+  // Job metadata
+  fileName    String
+  fileSize    Int      // bytes
+  s3Path      String   // path in MinIO/S3
+  
+  // Job status
+  status      JobStatus @default(PENDING)
+  priority    Int       @default(0)  // for job queue priority
+  
+  // Results
+  rulesMatched Int      @default(0)
+  findings    Finding[]
+  
+  // Worker tracking
+  workerToken String?
+  startedAt   DateTime?
+  completedAt DateTime?
+  
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  ruleset     Ruleset  @relation(fields: [rulesetId], references: [id], onDelete: Restrict)
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@index([projectId])
+  @@index([rulesetId])
+  @@index([status])
+  @@index([createdAt])
+  @@index([priority, status])  // for job polling queue
+}
+
+enum JobStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+model Finding {
+  id          String   @id @default(cuid())
+  jobId       String
+  
+  // Finding details
+  protocol    String
+  srcIp       String
+  dstIp       String
+  srcPort     Int?
+  dstPort     Int?
+  
+  // Match information
+  ruleName    String
+  ruleId      String
+  severity    String  // "low", "medium", "high", "critical"
+  
+  // Payload/context
+  metadata    String  @db.Json  // Additional context
+  
+  job         Job     @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  
+  createdAt   DateTime @default(now())
+  
+  @@index([jobId])
+  @@index([severity])
+  @@index([protocol])
+}
+
+// Usage and Subscriptions
+model Subscription {
+  id          String   @id @default(cuid())
+  projectId   String
+  
+  // Plan details
+  plan        SubscriptionPlan @default(FREE)
+  status      SubscriptionStatus @default(ACTIVE)
+  
+  // Limits
+  jobsPerMonth Int
+  fileSize     Int      // max file size in bytes
+  storageGb    Int      // max storage in GB
+  
+  // Billing
+  stripeId    String?
+  billingPeriodStart DateTime?
+  billingPeriodEnd   DateTime?
+  
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  usage       Usage?
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@unique([projectId])
+  @@index([status])
+}
+
+enum SubscriptionPlan {
+  FREE
+  STARTER
+  PRO
+  ENTERPRISE
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  PAUSED
+  CANCELLED
+  PAST_DUE
+}
+
+model Usage {
+  id          String   @id @default(cuid())
+  subscriptionId String  @unique
+  
+  // Monthly tracking
+  jobsUsed    Int      @default(0)
+  storageUsed Int      @default(0)  // in bytes
+  
+  // Window
+  periodStart DateTime
+  periodEnd   DateTime
+  
+  subscription Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  
+  @@index([subscriptionId])
+  @@index([periodStart, periodEnd])
+}
+
+// API Keys for programmatic access
+model ApiKey {
+  id          String   @id @default(cuid())
+  userId      String
+  
+  name        String
+  token       String   @unique  // hashed
+  lastUsedAt  DateTime?
+  expiresAt   DateTime?
+  isRevoked   Boolean  @default(false)
+  
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  createdAt   DateTime @default(now())
+  
+  @@index([userId])
+  @@index([isRevoked])
+}

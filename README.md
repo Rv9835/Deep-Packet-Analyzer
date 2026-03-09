@@ -38,6 +38,44 @@ pnpm --filter web start
 
 JavaScript development is optional; the core engine remains C++.
 
+## Database Setup
+
+This project uses [Prisma](https://www.prisma.io/) for database schema and migrations.
+The database workspace is located in `packages/db`.
+
+### Prerequisites
+
+- PostgreSQL running (via Docker Compose: `docker-compose up -d`)
+- Set `DATABASE_URL` environment variable (see `.env.example`)
+
+### Quick Start
+
+```bash
+# Install dependencies (one-time)
+pnpm -w install
+
+# Create and apply migrations
+pnpm db:migrate:dev
+
+# Seed database with test data
+pnpm db:seed
+
+# View database UI
+pnpm db:studio
+```
+
+### Database Scripts
+
+All scripts can be run from the project root:
+
+- **`pnpm db:migrate:dev`** - Create/apply migrations in development
+- **`pnpm db:migrate`** - Apply migrations (production)
+- **`pnpm db:reset`** - Reset database and re-run all migrations
+- **`pnpm db:seed`** - Populate with test data (user, project, rules, etc.)
+- **`pnpm db:studio`** - Open Prisma Studio (web UI for data inspection)
+
+See [packages/db/README.md](packages/db/README.md) for detailed documentation.
+
 ## Python utilities
 
 The `generate_test_pcap.py` script uses [Scapy](https://scapy.net/). Install it with:

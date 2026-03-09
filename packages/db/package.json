@@ -1,0 +1,22 @@
+{
+  "name": "@dpa/db",
+  "version": "0.1.0",
+  "description": "Database schema and migrations for Deep Packet Analyzer",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "migrate": "prisma migrate deploy",
+    "migrate:dev": "prisma migrate dev",
+    "db:push": "prisma db push",
+    "db:reset": "prisma migrate reset --force",
+    "db:seed": "node seed.js",
+    "generate": "prisma generate",
+    "studio": "prisma studio"
+  },
+  "dependencies": {
+    "@prisma/client": "^5.8.0"
+  },
+  "devDependencies": {
+    "prisma": "^5.8.0"
+  }
+}
