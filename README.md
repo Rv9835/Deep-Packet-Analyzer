@@ -17,7 +17,7 @@ The C++ engine uses **CMake** with standardized output directories to `engine/bu
 ### Quick Start
 
 ```bash
-cd /path/to/Deep\ Packet\ Analyzer
+cd /path/to/Deep\ Packet\ Analyzer.
 mkdir -p engine/build
 cd engine/build
 cmake -DCMAKE_BUILD_TYPE=Debug ..
