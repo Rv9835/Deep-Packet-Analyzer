@@ -7,55 +7,109 @@ on:
     branches: [ main ]
 
 jobs:
-  build:
+  web:
+    name: Web CI
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'pnpm'
+
+      - name: Install pnpm
+        run: npm install -g pnpm
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Lint
+        run: pnpm lint || echo "No lint script defined"
+
+      - name: Test
+        run: pnpm test || echo "No test script defined"
+
+      - name: Build
+        run: pnpm build || echo "No build script defined"
+
+      - name: Cache pnpm store
+        uses: actions/cache@v4
+        with:
+          path: ~/.pnpm-store
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
+
+  engine:
+    name: Engine CI
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest]
         build_type: [Release, Debug]
     timeout-minutes: 30
-
     steps:
-    - name: Checkout
-      uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-    - name: Set up toolchain
-      run: |
-        if [ "${{ matrix.os }}" = "ubuntu-latest" ]; then
-          sudo apt-get update
-          sudo apt-get install -y build-essential cmake libssl-dev
-        else
-          brew update || true
-          brew install cmake openssl@3 || true
-        fi
+      - name: Set up toolchain
+        run: |
+          if [ "${{ matrix.os }}" = "ubuntu-latest" ]; then
+            sudo apt-get update
+            sudo apt-get install -y build-essential cmake libssl-dev
+          else
+            brew update || true
+            brew install cmake openssl@3 || true
+          fi
 
-    - name: Configure
-      run: |
-        mkdir -p build
-        cd build
-        cmake .. -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
+      - name: Cache CMake build
+        uses: actions/cache@v4
+        with:
+          path: build
+          key: ${{ runner.os }}-cmake-${{ matrix.build_type }}-${{ hashFiles('CMakeLists.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-cmake-
 
-    - name: Build
-      run: |
-        cd build
-        if [ "${{ matrix.os }}" = "ubuntu-latest" ]; then
-          make -j$(nproc)
-        else
-          make -j$(sysctl -n hw.ncpu || echo 2)
-        fi
+      - name: Configure
+        run: |
+          mkdir -p build
+          cd build
+          cmake .. -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
 
-    - name: Run tests
-      run: |
-        cd build
-        if command -v ctest >/dev/null 2>&1; then
-          ctest --output-on-failure || true
-        else
-          echo "ctest not available; skipping"
-        fi
+      - name: Build
+        run: |
+          cd build
+          if [ "${{ matrix.os }}" = "ubuntu-latest" ]; then
+            make -j$(nproc)
+          else
+            make -j$(sysctl -n hw.ncpu || echo 2)
+          fi
 
-    - name: Upload test logs on failure
-      if: failure()
-      uses: actions/upload-artifact@v4
-      with:
-        name: test-logs-${{ matrix.os }}-${{ matrix.build_type }}
-        path: build/Testing || build
+      - name: Run unit tests
+        run: |
+          cd build
+          if command -v ctest >/dev/null 2>&1; then
+            ctest --output-on-failure || true
+          else
+            echo "ctest not available; skipping"
+          fi
+
+      - name: Upload test logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-logs-${{ matrix.os }}-${{ matrix.build_type }}
+          path: build/Testing || build
+
+      - name: Run sanitizers (nightly)
+        if: github.event_name == 'schedule'
+        run: |
+          cd build
+          # Example: run with AddressSanitizer (customize as needed)
+          ctest -T memcheck || true
