@@ -29,6 +29,9 @@ target_link_libraries(test_flowtracker PRIVATE ${COMMON_TEST_LIBS})
 add_executable(test_pcapng test_pcapng.cpp)
 target_link_libraries(test_pcapng PRIVATE ${COMMON_TEST_LIBS})
 
+add_executable(test_pcap_reader test_pcap_reader.cpp ${CMAKE_SOURCE_DIR}/src/pcap_reader.cpp)
+target_link_libraries(test_pcap_reader PRIVATE ${COMMON_TEST_LIBS})
+
 add_executable(test_golden test_golden.cpp)
 target_link_libraries(test_golden PRIVATE ${COMMON_TEST_LIBS})
 
@@ -40,4 +43,5 @@ add_test(NAME sni COMMAND test_sni)
 add_test(NAME http COMMAND test_http)
 add_test(NAME flowtracker COMMAND test_flowtracker)
 add_test(NAME pcapng COMMAND test_pcapng)
+add_test(NAME pcap_reader COMMAND test_pcap_reader)
 add_test(NAME golden COMMAND test_golden)
