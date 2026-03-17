@@ -1,12 +1,21 @@
 {
-  "root": true,
-  "env": {
-    "node": true,
-    "es2021": true
-  },
-  "extends": ["eslint:recommended"],
-  "parserOptions": {
-    "ecmaVersion": "latest"
-  },
-  "rules": {}
+    "root": true,
+    "ignorePatterns": [
+        "build/**",
+        "**/node_modules/**",
+        "**/dist/**",
+        "**/coverage/**",
+        "packages/db/seed.js"
+    ],
+    "env": {
+        "node": true,
+        "es2021": true
+    },
+    "extends": ["eslint:recommended", "prettier"],
+    "parserOptions": {
+        "ecmaVersion": "latest"
+    },
+    "rules": {
+        "no-console": "off"
+    }
 }
