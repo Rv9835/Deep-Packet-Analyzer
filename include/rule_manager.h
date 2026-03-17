@@ -11,8 +11,10 @@
 
 enum class Action { Allow, Deny };
 enum class RuleType { IP, Domain, App };
+enum class AppType { WEB, TLS, DNS, UNKNOWN };
 
 struct Rule {
+    std::string id;
     RuleType type;
     Action action;
     // IP rule
@@ -25,7 +27,7 @@ struct Rule {
     std::string domain;
     bool domain_wildcard = false;
     // App rule
-    std::string app;
+    AppType app = AppType::UNKNOWN;
 };
 
 class RuleManager {
@@ -40,6 +42,8 @@ public:
     struct EvalResult {
         Action action;
         std::optional<size_t> rule_index;
+        std::optional<std::string> rule_id;
+        std::optional<std::string> reason;
     };
 
     std::optional<EvalResult> evaluate(const ParsedPacket &pkt) const;
