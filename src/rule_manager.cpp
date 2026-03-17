@@ -1,8 +1,12 @@
 #include "rule_manager.h"
+#include "sni_extractor.h"
+#include "http_extractor.h"
 #include <fstream>
 #include <sstream>
 #include <nlohmann/json.hpp>
 #include <algorithm>
+#include <cctype>
+#include <cstdio>
 
 using json = nlohmann::json;
 
@@ -16,6 +20,66 @@ static uint32_t ipStringToUint(const std::string &s) {
                (uint32_t(b3)<<8) | uint32_t(b4);
     }
     return 0;
+}
+
+static std::string normalizeDomain(std::string domain) {
+    auto trim = [](std::string &s) {
+        while (!s.empty() && std::isspace(static_cast<unsigned char>(s.front()))) s.erase(s.begin());
+        while (!s.empty() && std::isspace(static_cast<unsigned char>(s.back()))) s.pop_back();
+    };
+    trim(domain);
+    std::transform(domain.begin(), domain.end(), domain.begin(), [](unsigned char c){ return static_cast<char>(std::tolower(c)); });
+    while (!domain.empty() && domain.back() == '.') domain.pop_back();
+    return domain;
+}
+
+static AppType parseAppType(const std::string &app_raw) {
+    std::string app = app_raw;
+    std::transform(app.begin(), app.end(), app.begin(), [](unsigned char c){ return static_cast<char>(std::tolower(c)); });
+    if (app == "web" || app == "http") return AppType::WEB;
+    if (app == "tls" || app == "https") return AppType::TLS;
+    if (app == "dns") return AppType::DNS;
+    return AppType::UNKNOWN;
+}
+
+static std::string appTypeToString(AppType app) {
+    switch (app) {
+        case AppType::WEB: return "web";
+        case AppType::TLS: return "tls";
+        case AppType::DNS: return "dns";
+        default: return "unknown";
+    }
+}
+
+static AppType inferAppType(const ParsedPacket &pkt) {
+    if (pkt.dst_port == 80 || pkt.src_port == 80) return AppType::WEB;
+    if (pkt.dst_port == 443 || pkt.src_port == 443) return AppType::TLS;
+    if (pkt.dst_port == 53 || pkt.src_port == 53) return AppType::DNS;
+    if (!pkt.l4_payload.empty()) {
+        std::string payload(reinterpret_cast<const char*>(pkt.l4_payload.data()), pkt.l4_payload.size());
+        if (payload.rfind("GET ", 0) == 0 || payload.rfind("POST ", 0) == 0 || payload.rfind("HEAD ", 0) == 0) {
+            return AppType::WEB;
+        }
+        if (payload.size() > 5 && payload[0] == '\x16' && payload[1] == '\x03') {
+            return AppType::TLS;
+        }
+    }
+    return AppType::UNKNOWN;
+}
+
+struct MatchCandidate {
+    size_t index = 0;
+    Action action = Action::Allow;
+    std::optional<std::string> rule_id;
+    std::string reason;
+    int precedence = -1;
+    int specificity = -1;
+};
+
+static bool betterCandidate(const MatchCandidate &lhs, const MatchCandidate &rhs) {
+    if (lhs.precedence != rhs.precedence) return lhs.precedence > rhs.precedence;
+    if (lhs.specificity != rhs.specificity) return lhs.specificity > rhs.specificity;
+    return lhs.index < rhs.index;
 }
 
 bool RuleManager::loadRules(const std::string &path) {
@@ -36,6 +100,7 @@ bool RuleManager::loadRules(const std::string &path) {
     if (j.contains("rules") && j["rules"].is_array()) {
         for (auto &rj : j["rules"]) {
             Rule r;
+            r.id = rj.value("id", "");
             std::string type = rj.value("type", "");
             std::string action = rj.value("action", "allow");
             r.action = (action == "deny" ? Action::Deny : Action::Allow);
@@ -54,17 +119,12 @@ bool RuleManager::loadRules(const std::string &path) {
                     if (prefix == 0) r.ip_mask = 0;
                     else r.ip_mask = prefix == 32 ? 0xffffffffu : (~0u << (32-prefix));
                 }
+                if (rj.contains("port")) {
+                    r.port = rj["port"].get<uint16_t>();
+                }
             } else if (type == "domain") {
                 r.type = RuleType::Domain;
-                r.domain = rj.value("pattern", "");
-                // normalization: lowercase, trim whitespace, strip trailing dot
-                auto trim = [](std::string &s) {
-                    while (!s.empty() && isspace((unsigned char)s.front())) s.erase(s.begin());
-                    while (!s.empty() && isspace((unsigned char)s.back())) s.pop_back();
-                };
-                trim(r.domain);
-                std::transform(r.domain.begin(), r.domain.end(), r.domain.begin(), ::tolower);
-                if (!r.domain.empty() && r.domain.back() == '.') r.domain.pop_back();
+                r.domain = normalizeDomain(rj.value("pattern", ""));
                 if (!r.domain.empty() && r.domain[0] == '*') {
                     r.domain_wildcard = true;
                     if (r.domain.size() > 2 && r.domain[1] == '.')
@@ -75,7 +135,7 @@ bool RuleManager::loadRules(const std::string &path) {
                 }
             } else if (type == "app") {
                 r.type = RuleType::App;
-                r.app = rj.value("app", "");
+                r.app = parseAppType(rj.value("app", ""));
             }
             rules_.push_back(r);
         }
@@ -93,54 +153,78 @@ static bool ipMatches(uint32_t flow_ip, uint16_t flow_port, const Rule &r) {
     return true;
 }
 
-// very cheap application classifier; only based on well‑known ports and simple
-// payload heuristics.  It is intentionally not stateful so it can run per packet.
-static std::string detectApp(const ParsedPacket &pkt) {
-    if (pkt.dst_port == 80 || pkt.src_port == 80) return "http";
-    if (pkt.dst_port == 443 || pkt.src_port == 443) return "tls";
-    if (pkt.dst_port == 53 || pkt.src_port == 53) return "dns";
-    // look for HTTP method or TLS handshake in payload if ports are atypical
-    if (!pkt.l4_payload.empty()) {
-        std::string p(reinterpret_cast<const char*>(pkt.l4_payload.data()), pkt.l4_payload.size());
-        if (p.rfind("GET ",0) == 0 || p.rfind("POST ",0) == 0) return "http";
-        if (p.size() > 5 && p[0] == '\x16' && p[1] == '\x03') return "tls";
-    }
-    return "";
-}
-
 std::optional<RuleManager::EvalResult> RuleManager::evaluate(const ParsedPacket &pkt) const {
-    uint32_t src = pkt.src_ip;
-    uint32_t dst = pkt.dst_ip;
+    const uint32_t src = pkt.src_ip;
+    const uint32_t dst = pkt.dst_ip;
+
+    std::optional<std::string> normalized_sni;
+    std::optional<std::string> normalized_host;
+    if (!pkt.l4_payload.empty()) {
+        SNIExtractor sni_extractor;
+        normalized_sni = sni_extractor.extract(pkt.l4_payload.data(), pkt.l4_payload.size());
+        HTTPExtractor http_extractor;
+        normalized_host = http_extractor.extractHost(pkt.l4_payload.data(), pkt.l4_payload.size());
+    }
+
+    const AppType app_type = inferAppType(pkt);
+
+    std::optional<MatchCandidate> best;
     for (size_t idx = 0; idx < rules_.size(); ++idx) {
         const Rule &r = rules_[idx];
-        bool matched = false;
+        std::optional<MatchCandidate> candidate;
         switch (r.type) {
         case RuleType::IP:
             if ((r.match_src && ipMatches(src, pkt.src_port, r)) ||
                 (r.match_dst && ipMatches(dst, pkt.dst_port, r))) {
-                matched = true;
+                int prefix = 0;
+                uint32_t mask = r.ip_mask;
+                while (mask) { prefix += static_cast<int>(mask & 1u); mask >>= 1u; }
+                candidate = MatchCandidate{idx, r.action, r.id.empty() ? std::nullopt : std::optional<std::string>(r.id),
+                                           "ip_cidr", 2, prefix};
             }
             break;
         case RuleType::Domain:
             if (!r.domain.empty()) {
-                std::string payload(pkt.l4_payload.begin(), pkt.l4_payload.end());
-                std::transform(payload.begin(), payload.end(), payload.begin(), ::tolower);
-                std::string dom = r.domain;
-                std::transform(dom.begin(), dom.end(), dom.begin(), ::tolower);
-                if (payload.find(dom) != std::string::npos) matched = true;
+                const auto domainMatches = [&](const std::string &value) -> bool {
+                    if (value.empty()) return false;
+                    if (!r.domain_wildcard) return value == r.domain;
+                    if (value == r.domain) return true;
+                    if (value.size() <= r.domain.size()) return false;
+                    return value.compare(value.size() - r.domain.size(), r.domain.size(), r.domain) == 0 &&
+                           value[value.size() - r.domain.size() - 1] == '.';
+                };
+
+                bool matched = false;
+                std::string reason;
+                if (normalized_sni && domainMatches(*normalized_sni)) {
+                    matched = true;
+                    reason = r.domain_wildcard ? "domain_wildcard_sni" : "domain_exact_sni";
+                } else if (normalized_host && domainMatches(*normalized_host)) {
+                    matched = true;
+                    reason = r.domain_wildcard ? "domain_wildcard_host" : "domain_exact_host";
+                }
+                if (matched) {
+                    int specificity = static_cast<int>(r.domain.size()) + (r.domain_wildcard ? 0 : 1000);
+                    candidate = MatchCandidate{idx, r.action, r.id.empty() ? std::nullopt : std::optional<std::string>(r.id),
+                                               reason, 3, specificity};
+                }
             }
             break;
         case RuleType::App: {
-            if (!r.app.empty()) {
-                std::string detected = detectApp(pkt);
-                if (!detected.empty() && detected == r.app) matched = true;
+            if (r.app != AppType::UNKNOWN && app_type == r.app) {
+                candidate = MatchCandidate{idx, r.action, r.id.empty() ? std::nullopt : std::optional<std::string>(r.id),
+                                           "app_type_" + appTypeToString(app_type), 1, 0};
             }
             break;
         }
         }
-        if (matched) {
-            return EvalResult{r.action, idx};
+        if (candidate && (!best || betterCandidate(*candidate, *best))) {
+            best = candidate;
         }
+    }
+
+    if (best) {
+        return EvalResult{best->action, best->index, best->rule_id, best->reason};
     }
     return EvalResult{default_action_, std::nullopt};
 }

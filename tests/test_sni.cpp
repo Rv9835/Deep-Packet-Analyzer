@@ -1,30 +1,41 @@
 #include "sni_extractor.h"
-#include <cassert>
+#include <catch2/catch_test_macros.hpp>
 #include <vector>
 
-int main() {
-    // build minimal TLS ClientHello containing server_name "test.com"
+TEST_CASE("SNIExtractor extracts and normalizes hostname from ClientHello", "[sni]") {
     std::vector<unsigned char> tls = {
-        0x16, 0x03, 0x01, 0x00, 0x2a, // record hdr
-        0x01, 0x00, 0x00, 0x26,       // handshake hdr (ClientHello)
-        0x03,0x03,
+        0x16, 0x03, 0x03, 0x00, 0x47,
+        0x01, 0x00, 0x00, 0x43,
+        0x03, 0x03,
     };
-    // random bytes
-    for (int i=0;i<32;i++) tls.push_back(0);
-    tls.push_back(0); // session id len
-    tls.push_back(0); tls.push_back(0); // cipher suite len
-    tls.push_back(0); // comp methods len
-    tls.push_back(0); tls.push_back(0x0a); // ext len 10
-    // server_name ext
-    tls.push_back(0x00); tls.push_back(0x00); // type
-    tls.push_back(0x00); tls.push_back(0x06); // len 6
-    tls.push_back(0x00); tls.push_back(0x04); // list len
-    tls.push_back(0x00); // name type
-    tls.push_back(0x00); tls.push_back(0x00); // name length 0 (empty)
+    for (int i = 0; i < 32; ++i) tls.push_back(0x11);
+    tls.push_back(0x00);
+    tls.push_back(0x00); tls.push_back(0x02); tls.push_back(0x13); tls.push_back(0x01);
+    tls.push_back(0x01); tls.push_back(0x00);
+    tls.push_back(0x00); tls.push_back(0x18);
+    tls.push_back(0x00); tls.push_back(0x00);
+    tls.push_back(0x00); tls.push_back(0x14);
+    tls.push_back(0x00); tls.push_back(0x12);
+    tls.push_back(0x00);
+    tls.push_back(0x00); tls.push_back(0x0f);
+    const char *host = "ExAmPle.COM.";
+    tls.insert(tls.end(), host, host + 15);
 
     SNIExtractor ext;
-    auto s = ext.extract(tls.data(), tls.size());
-    // our packet has empty hostname, so result should be empty optional but not crash
-    assert(!s.has_value());
-    return 0;
+    auto result = ext.extract(tls.data(), tls.size());
+    REQUIRE(result.has_value());
+    REQUIRE(*result == "example.com");
+}
+
+TEST_CASE("SNIExtractor gracefully handles partial handshake", "[sni]") {
+    std::vector<unsigned char> partial = {
+        0x16, 0x03, 0x03, 0x00, 0x20,
+        0x01, 0x00, 0x00, 0x1c,
+        0x03, 0x03,
+        0x00, 0x01, 0x02
+    };
+
+    SNIExtractor ext;
+    auto result = ext.extract(partial.data(), partial.size());
+    REQUIRE_FALSE(result.has_value());
 }

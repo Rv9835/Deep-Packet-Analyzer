@@ -86,13 +86,19 @@ bool DPIEngine::run(const EngineConfig &cfg) {
                 auto eval = rules.evaluate(*item.parsed);
                 bool allow = true;
                 std::optional<size_t> rule_idx;
+                std::optional<std::string> rule_id;
+                std::optional<std::string> match_reason;
                 if (eval) {
                     allow = (eval->action == Action::Allow);
                     rule_idx = eval->rule_index;
+                    rule_id = eval->rule_id;
+                    match_reason = eval->reason;
                 }
                 trackers[t].addPacket(*item.parsed,
                                       eval?std::optional<Action>(eval->action):std::nullopt,
-                                      rule_idx);
+                                      rule_idx,
+                                      rule_id,
+                                      match_reason);
                 if (allow) {
                     allowed_indices[t].push_back(i);
                 }
@@ -104,9 +110,15 @@ bool DPIEngine::run(const EngineConfig &cfg) {
     // merge trackers
     FlowTracker merged;
     for (auto &tr : trackers) {
-        mergeFlows(merged.flows(), tr.flows());
+        mergeFlows(merged.mutableFlows(), tr.flows());
     }
     FlowTracker &tracker = merged;
+
+    if (cfg.max_flows > 0 && tracker.flows().size() > cfg.max_flows) {
+        std::cerr << "Max flow limit exceeded: " << tracker.flows().size()
+                  << " > " << cfg.max_flows << "\n";
+        return false;
+    }
 
     // open filtered pcap for writing; copy global header
     std::ifstream in2(cfg.pcap_path, std::ios::binary);
@@ -174,6 +186,8 @@ bool DPIEngine::run(const EngineConfig &cfg) {
         if (s.http_host) f["http_host"] = *s.http_host;
         if (s.decision) f["decision"] = (*s.decision == Action::Allow ? "allow" : "deny");
         if (s.matched_rule_index) f["matched_rule_index"] = *s.matched_rule_index;
+        if (s.matched_rule_id) f["matched_rule_id"] = *s.matched_rule_id;
+        if (s.match_reason) f["match_reason"] = *s.match_reason;
         report["flows"].push_back(f);
     }
     // add sorted domain/app lists

@@ -1,5 +1,7 @@
 #include "sni_extractor.h"
 #include <cstring>
+#include <algorithm>
+#include <cctype>
 
 SNIExtractor::SNIExtractor() {}
 SNIExtractor::~SNIExtractor() {}
@@ -8,17 +10,40 @@ static uint16_t read16(const unsigned char *p) {
     return (uint16_t(p[0]) << 8) | uint16_t(p[1]);
 }
 
+std::string SNIExtractor::normalizeDomain(const std::string &domain) {
+    if (domain.empty()) return domain;
+    std::string out;
+    out.reserve(domain.size());
+    for (char ch : domain) {
+        out.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(ch))));
+    }
+
+    while (!out.empty() && (out.back() == '.' || std::isspace(static_cast<unsigned char>(out.back())))) {
+        out.pop_back();
+    }
+    size_t start = 0;
+    while (start < out.size() && std::isspace(static_cast<unsigned char>(out[start]))) {
+        ++start;
+    }
+    if (start > 0) out.erase(0, start);
+    return out;
+}
+
 std::optional<std::string> SNIExtractor::extract(const unsigned char *data, size_t len) {
-    // minimalistic parse: expect TLS record header (5 bytes)
+    // best-effort parse: expects a single TLS record with ClientHello
     if (len < 5) return std::nullopt;
     unsigned char content_type = data[0];
     if (content_type != 22) return std::nullopt; // handshake
     uint16_t version = read16(data+1);
+    (void)version;
     uint16_t record_len = read16(data+3);
-    if (len < 5 + record_len) return std::nullopt;
+    if (len < 5 + record_len) {
+        // partial/incomplete capture is expected in MVP (no reassembly)
+        return std::nullopt;
+    }
     const unsigned char *p = data + 5;
     size_t remaining = record_len;
-    // handshake header
+
     if (remaining < 4) return std::nullopt;
     unsigned char hs_type = p[0];
     uint32_t hs_len = (uint32_t(p[1]) << 16) | (uint32_t(p[2]) << 8) | uint32_t(p[3]);
@@ -67,7 +92,10 @@ std::optional<std::string> SNIExtractor::extract(const unsigned char *data, size
                 if (list_rem < name_len) break;
                 if (name_type == 0) {
                     // host_name
-                    return std::string(reinterpret_cast<const char*>(q), name_len);
+                    std::string host(reinterpret_cast<const char*>(q), name_len);
+                    host = normalizeDomain(host);
+                    if (!host.empty()) return host;
+                    return std::nullopt;
                 }
                 q += name_len;
                 list_rem -= name_len;
@@ -78,4 +106,12 @@ std::optional<std::string> SNIExtractor::extract(const unsigned char *data, size
         remaining -= ext_sz;
     }
     return std::nullopt;
+}
+
+void SNIExtractor::on_packet(const ParsedPacket &packet, FlowMetadata &metadata) {
+    if (packet.l4_payload.empty()) return;
+    auto sni = extract(packet.l4_payload.data(), packet.l4_payload.size());
+    if (sni) {
+        metadata.values["tls.sni"] = *sni;
+    }
 }
