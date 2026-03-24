@@ -21,7 +21,7 @@ cd /path/to/Deep\ Packet\ Analyzer.
 mkdir -p engine/build
 cd engine/build
 cmake -DCMAKE_BUILD_TYPE=Debug ..
-make -j$(nproc)  # or: cmake --build .
+make -j$(nproc)  # or: cmake --build.
 ```
 
 The binary is built to: `engine/build/bin/packet_analyzer`
